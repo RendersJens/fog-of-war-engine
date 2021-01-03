@@ -86,9 +86,54 @@ def simple_static_evaluation(node):
     return position_evaluation(position)
 
 
+class additivetuple(tuple):
+    def __add__(self, other):
+        return additivetuple(i+j for i,j in zip(self, other))
+    def __neg__(self):
+        return additivetuple(-i for i in self)
+    def __mul__(self, n):
+        return additivetuple(i*n for i in self)
+    def __rmul__(self, n):
+        return additivetuple(n*i for i in self)
+
+
 def static_evaluation(node):
     position = next(iter(node.possible))
-    return position_evaluation(position)
+    if len(find_piece(position, "K")) == 0:
+        win_lose_score = -2000
+    elif len(find_piece(position, "k")) == 0:
+        win_lose_score = 2000
+    else:
+        win_lose_score = 0
+
+    my_knights = len(find_piece(position, "N"))
+    opponent_knights = len(find_piece(position, "n"))
+    material_score = my_knights - opponent_knights
+
+    # visibility score
+    if node.turn:
+        my_visibility_score = -len(find_piece(node.view, "#"))
+        opponent_visibility_scores = []
+        for position in node.possible:
+            opponent_view = create_view(position, False)
+            opponent_visibility_scores.append(-len(find_piece(node.view, "#")))
+        opponent_visibility_score = sum(opponent_visibility_scores)/len(opponent_visibility_scores)
+    else:
+        my_visibility_scores = []
+        opponent_visibility_scores = []
+        for position in node.possible:
+            my_view = create_view(position, True)
+            my_visibility_scores.append(-len(find_piece(my_view, "#")))
+
+            opponent_view = create_view(position, False)
+            opponent_visibility_scores.append(-len(find_piece(opponent_view, "#")))
+
+        my_visibility_score = sum(my_visibility_scores)/len(my_visibility_scores)
+        opponent_visibility_score = sum(opponent_visibility_scores)/len(opponent_visibility_scores)
+
+    visibility_score = my_visibility_score - opponent_visibility_score
+
+    return additivetuple((win_lose_score, material_score, visibility_score))
 
 
 def children_generator(node):
@@ -106,12 +151,11 @@ def children_generator(node):
 
 
 def minimax(node, depth):
-    value, principal_variation = negamax(node, depth, -float("inf"), +float("inf"))
+    value, principal_variation = negamax(node, depth, -additivetuple([float("inf")]*3), additivetuple([float("inf")]*3))
     lookup_table["principal_variation"] = principal_variation
     if node.turn:
         return value, principal_variation
     else:
-        value, principal_variation = negamax(node, depth, -float("inf"), +float("inf"))
         return -value, principal_variation
 
 
@@ -142,13 +186,13 @@ def negamax(node, depth, alpha, beta):
         return value, []
 
     # recursion
-    value = -float("inf")
+    value = -additivetuple([float("inf")]*3)
     children = children_generator(node)
     for child, move in children:
         child_value, principal_variation = negamax(child, depth-1, -beta, -alpha)
-        child_value *= -1
-        if child_value > 1000:
-            child_value -= 1
+        child_value = -child_value
+        if child_value[0] > 1000:
+            child_value = additivetuple((child_value[0] - 1, *child_value[1:]))
         if child_value > value:
             value = child_value
             best_move = move
